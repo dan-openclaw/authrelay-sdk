@@ -1,0 +1,9 @@
+src/
+test/
+scripts/
+tsconfig.json
+*.ts
+!*.d.ts
+.tsbuildinfo
+node_modules/
+npm-debug.log

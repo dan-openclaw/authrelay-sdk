@@ -1,0 +1,43 @@
+{
+  "name": "authrelay",
+  "version": "1.0.0",
+  "description": "SDK for AI agents to request human-in-the-loop authentication via AuthRelay",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "keywords": [
+    "authrelay",
+    "authentication",
+    "human-in-the-loop",
+    "ai-agents"
+  ],
+  "author": "AuthRelay Team",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "test": "node test/test.js",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/authrelay/sdk.git",
+    "directory": "packages/typescript"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.3.3"
+  }
+}
