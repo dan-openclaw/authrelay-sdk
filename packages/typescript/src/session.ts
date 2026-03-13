@@ -1,18 +1,20 @@
-import { EventEmitter } from 'events';
-import { SessionStatus, PollSessionResponse, SessionEvents } from './types';
+import { SessionStatus, PollSessionResponse } from './types';
+
+type EventHandler = (...args: any[]) => void;
 
 /**
  * Manages a single authentication relay session
  */
-export class RelaySession extends EventEmitter {
+export class RelaySession {
   private sessionId: string;
   private status: SessionStatus = 'pending';
   private baseUrl: string;
   private apiKey: string;
   private pollInterval: number;
   private timeout: number;
-  private pollTimeoutHandle?: NodeJS.Timeout;
-  private sessionTimeoutHandle?: NodeJS.Timeout;
+  private pollTimeoutHandle?: ReturnType<typeof setTimeout>;
+  private sessionTimeoutHandle?: ReturnType<typeof setTimeout>;
+  private listeners: Map<string, EventHandler[]> = new Map();
 
   constructor(
     sessionId: string,
@@ -21,7 +23,6 @@ export class RelaySession extends EventEmitter {
     pollInterval: number,
     timeout: number,
   ) {
-    super();
     this.sessionId = sessionId;
     this.baseUrl = baseUrl;
     this.apiKey = apiKey;
@@ -29,46 +30,75 @@ export class RelaySession extends EventEmitter {
     this.timeout = timeout;
   }
 
-  /**
-   * Get the current session ID
-   */
+  /** Register an event handler */
+  on(event: string, handler: EventHandler): this {
+    if (!this.listeners.has(event)) this.listeners.set(event, []);
+    this.listeners.get(event)!.push(handler);
+    return this;
+  }
+
+  /** Register a one-time event handler */
+  once(event: string, handler: EventHandler): this {
+    const wrapped = (...args: any[]) => {
+      this.off(event, wrapped);
+      handler(...args);
+    };
+    return this.on(event, wrapped);
+  }
+
+  /** Remove an event handler */
+  off(event: string, handler: EventHandler): this {
+    const handlers = this.listeners.get(event);
+    if (handlers) {
+      this.listeners.set(event, handlers.filter(h => h !== handler));
+    }
+    return this;
+  }
+
+  /** Emit an event */
+  private emit(event: string, ...args: any[]): void {
+    const handlers = this.listeners.get(event);
+    if (handlers) {
+      for (const handler of [...handlers]) {
+        handler(...args);
+      }
+    }
+  }
+
+  /** Remove all listeners */
+  private removeAllListeners(): void {
+    this.listeners.clear();
+  }
+
+  /** Get the current session ID */
   getSessionId(): string {
     return this.sessionId;
   }
 
-  /**
-   * Get the current status
-   */
+  /** Get the current status */
   getStatus(): SessionStatus {
     return this.status;
   }
 
-  /**
-   * Get the operator URL to share with the user
-   */
+  /** Get the operator URL to share with the user */
   getOperatorUrl(): string {
     return `${this.baseUrl}/session/${this.sessionId}`;
   }
 
-  /**
-   * Wait for the session to complete, expire, or fail
-   */
+  /** Wait for the session to complete, expire, or fail */
   async wait(): Promise<Record<string, unknown> | null> {
     return new Promise((resolve, reject) => {
-      // Set up session timeout
       this.sessionTimeoutHandle = setTimeout(() => {
         this.status = 'expired';
         this.emit('expired');
         this.stopPolling();
         reject(
           new Error(
-            'AuthRelay: Session expired. The operator did not complete authentication within ' +
-            `${this.timeout / 1000} seconds.`,
+            `AuthRelay: Session expired. The operator did not complete authentication within ${this.timeout / 1000} seconds.`,
           ),
         );
       }, this.timeout);
 
-      // Set up event handlers
       const onCompleted = (credentials: Record<string, unknown>) => {
         this.cleanup();
         resolve(credentials);
@@ -83,8 +113,7 @@ export class RelaySession extends EventEmitter {
         this.cleanup();
         reject(
           new Error(
-            'AuthRelay: Session expired. The operator did not complete authentication within ' +
-            `${this.timeout / 1000} seconds.`,
+            `AuthRelay: Session expired. The operator did not complete authentication within ${this.timeout / 1000} seconds.`,
           ),
         );
       };
@@ -93,14 +122,11 @@ export class RelaySession extends EventEmitter {
       this.once('error', onError);
       this.once('expired', onExpired);
 
-      // Start polling
       this.startPolling();
     });
   }
 
-  /**
-   * Abandon the session
-   */
+  /** Abandon the session */
   async abandon(): Promise<void> {
     this.status = 'failed';
     this.stopPolling();
@@ -119,9 +145,6 @@ export class RelaySession extends EventEmitter {
     }
   }
 
-  /**
-   * Start polling the session status
-   */
   private startPolling(): void {
     let backoffMs = 2000;
     const maxBackoffMs = 5000;
@@ -130,9 +153,7 @@ export class RelaySession extends EventEmitter {
       try {
         const response = await fetch(`${this.baseUrl}/api/sessions/${this.sessionId}`, {
           method: 'GET',
-          headers: {
-            'x-api-key': this.apiKey,
-          },
+          headers: { 'x-api-key': this.apiKey },
         });
 
         if (!response.ok) {
@@ -143,17 +164,13 @@ export class RelaySession extends EventEmitter {
         const previousStatus = this.status;
         this.status = data.status;
 
-        // Emit status changed event
         if (previousStatus !== this.status) {
           this.emit('statusChanged', this.status);
         }
 
         switch (data.status) {
           case 'claimed':
-            if (previousStatus !== 'claimed') {
-              this.emit('claimed');
-            }
-            // Continue polling
+            if (previousStatus !== 'claimed') this.emit('claimed');
             this.pollTimeoutHandle = setTimeout(poll, backoffMs);
             backoffMs = Math.min(backoffMs + 1000, maxBackoffMs);
             break;
@@ -178,7 +195,6 @@ export class RelaySession extends EventEmitter {
             break;
 
           case 'pending':
-            // Continue polling
             this.pollTimeoutHandle = setTimeout(poll, backoffMs);
             backoffMs = Math.min(backoffMs + 1000, maxBackoffMs);
             break;
@@ -189,13 +205,9 @@ export class RelaySession extends EventEmitter {
       }
     };
 
-    // Initial poll
     this.pollTimeoutHandle = setTimeout(poll, 0);
   }
 
-  /**
-   * Stop polling
-   */
   private stopPolling(): void {
     if (this.pollTimeoutHandle) {
       clearTimeout(this.pollTimeoutHandle);
@@ -203,9 +215,6 @@ export class RelaySession extends EventEmitter {
     }
   }
 
-  /**
-   * Cleanup resources
-   */
   private cleanup(): void {
     this.stopPolling();
     if (this.sessionTimeoutHandle) {
