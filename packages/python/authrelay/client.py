@@ -114,6 +114,7 @@ class AuthRelay:
                 headers={
                     'x-api-key': self.api_key,
                     'Content-Type': 'application/json',
+                    'User-Agent': 'AuthRelay-Python-SDK/1.0.0',
                 },
                 data=body,
             )

@@ -137,6 +137,7 @@ class RelaySession:
                 headers={
                     'x-api-key': self.api_key,
                     'Content-Type': 'application/json',
+                    'User-Agent': 'AuthRelay-Python-SDK/1.0.0',
                 },
                 data=b'',
             )
@@ -168,7 +169,7 @@ class RelaySession:
                 req = urllib.request.Request(
                     f"{self.base_url}/api/sessions/{self.session_id}",
                     method='GET',
-                    headers={'x-api-key': self.api_key},
+                    headers={'x-api-key': self.api_key, 'User-Agent': 'AuthRelay-Python-SDK/1.0.0'},
                 )
                 with urllib.request.urlopen(req, timeout=10) as response:
                     if response.status != 200:
